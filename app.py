@@ -19,16 +19,18 @@ def load_prompt() -> str:
 
 RAHHAL_SYSTEM = load_prompt()
 
+DEFAULT_MODEL = "gpt-4.1-mini"
 
-def get_client():
+
+def get_client_or_sidebar_error():
     if OpenAI is None:
-        st.error("OpenAI library not installed. Check requirements.txt.")
-        st.stop()
+        st.sidebar.error("OpenAI library not installed. Check requirements.txt.")
+        return None
 
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
-        st.error("API key not configured. Add OPENAI_API_KEY in Streamlit Secrets.")
-        st.stop()
+        st.sidebar.error("Missing OPENAI_API_KEY. Add it in Streamlit Cloud Secrets.")
+        return None
 
     return OpenAI(api_key=key)
 
@@ -160,15 +162,14 @@ st.set_page_config(page_title="Rahhal CREW", page_icon="🧭", layout="centered"
 
 st.markdown("## Rahhal CREW")
 st.markdown("Structured Crisis Readiness Exercise Navigator with clean export to Word.")
-st.caption("Tip: type FINAL PACKAGE when you want the full package in tables.")
 st.divider()
 
 with st.sidebar:
     st.header("Control Panel")
-    model = st.selectbox("Model", ["gpt-4.1-mini", "gpt-4.1"], index=0)
-    temperature = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
-    st.divider()
 
+    temperature = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
+
+    st.divider()
     if st.button("Reset chat"):
         if "msgs" in st.session_state:
             del st.session_state["msgs"]
@@ -196,11 +197,11 @@ tab1, tab2 = st.tabs(["Chat", "How it works"])
 with tab2:
     st.markdown(
         """
-How to use:
-1 Select your exercise format when asked
-2 Provide inputs one by one
-3 When ready, type FINAL PACKAGE
-4 Use Export in the left panel to download Word tables
+• Open the Chat tab  
+• Answer the first question: Discussion Based Tabletop or Functional Exercise  
+• Provide inputs one by one as Rahhal asks  
+• When ready, type FINAL PACKAGE to generate the full package in tables  
+• Use Export in the left panel to download a Word file with real tables  
 """
     )
 
@@ -224,7 +225,7 @@ with tab1:
             with st.chat_message(m["role"]):
                 st.write(m["content"])
 
-    user_input = st.chat_input("Type your message")
+    user_input = st.chat_input(placeholder="Write your answer here")
     if user_input:
         clean = user_input.strip()
         st.session_state.msgs.append({"role": "user", "content": clean})
@@ -235,18 +236,20 @@ with tab1:
         if clean.upper() == "FINAL PACKAGE":
             st.session_state.msgs.append({"role": "system", "content": build_final_package_override()})
 
-        client = get_client()
+        client = get_client_or_sidebar_error()
+        if client is None:
+            st.stop()
 
         with st.chat_message("assistant"):
             try:
                 response = client.chat.completions.create(
-                    model=model,
+                    model=DEFAULT_MODEL,
                     temperature=temperature,
                     messages=st.session_state.msgs,
                 )
                 reply = response.choices[0].message.content
             except Exception as e:
-                st.error(f"API error: {e}")
+                st.sidebar.error(f"API error: {e}")
                 st.stop()
 
             st.write(reply)
