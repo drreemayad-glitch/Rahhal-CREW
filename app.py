@@ -18,7 +18,6 @@ def load_prompt() -> str:
 
 
 RAHHAL_SYSTEM = load_prompt()
-
 DEFAULT_MODEL = "gpt-4.1-mini"
 
 
@@ -29,7 +28,7 @@ def get_client_or_sidebar_error():
 
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
-        st.sidebar.error("Missing OPENAI_API_KEY. Add it in Streamlit Cloud Secrets.")
+        st.sidebar.error("Missing OPENAI_API_KEY. Add it in Streamlit Secrets.")
         return None
 
     return OpenAI(api_key=key)
@@ -158,54 +157,7 @@ Do not use the pipe character inside cell content.
 """
 
 
-st.set_page_config(page_title="Rahhal CREW", page_icon="🧭", layout="centered")
-
-st.markdown("## Rahhal CREW")
-st.markdown("Structured Crisis Readiness Exercise Navigator with clean export to Word.")
-st.divider()
-
-with st.sidebar:
-    st.header("Control Panel")
-
-    temperature = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
-
-    st.divider()
-    if st.button("Reset chat"):
-        if "msgs" in st.session_state:
-            del st.session_state["msgs"]
-        st.rerun()
-
-    st.divider()
-    st.subheader("Export")
-    if st.button("Prepare DOCX download"):
-        msgs = st.session_state.get("msgs", [])
-        msgs = [m for m in msgs if m.get("role") != "system"]
-        if not msgs:
-            st.warning("No content yet. Chat first, then export.")
-        else:
-            file_path = export_docx(msgs)
-            with open(file_path, "rb") as f:
-                st.download_button(
-                    "Download Word file",
-                    f,
-                    file_name=file_path,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                )
-
-tab1, tab2 = st.tabs(["Chat", "How it works"])
-
-with tab2:
-    st.markdown(
-        """
-• Open the Chat tab  
-• Answer the first question: Discussion Based Tabletop or Functional Exercise  
-• Provide inputs one by one as Rahhal asks  
-• When ready, type FINAL PACKAGE to generate the full package in tables  
-• Use Export in the left panel to download a Word file with real tables  
-"""
-    )
-
-with tab1:
+def ensure_session():
     if "msgs" not in st.session_state:
         st.session_state.msgs = [
             {"role": "system", "content": RAHHAL_SYSTEM},
@@ -220,6 +172,95 @@ with tab1:
             },
         ]
 
+
+def call_model_and_append(user_text: str):
+    clean = user_text.strip()
+    if not clean:
+        return
+
+    st.session_state.msgs.append({"role": "user", "content": clean})
+
+    with st.chat_message("user"):
+        st.write(clean)
+
+    if clean.upper() == "FINAL PACKAGE":
+        st.session_state.msgs.append({"role": "system", "content": build_final_package_override()})
+
+    client = get_client_or_sidebar_error()
+    if client is None:
+        st.stop()
+
+    with st.chat_message("assistant"):
+        try:
+            response = client.chat.completions.create(
+                model=DEFAULT_MODEL,
+                temperature=st.session_state.get("temperature", 0.1),
+                messages=st.session_state.msgs,
+            )
+            reply = response.choices[0].message.content
+        except Exception as e:
+            st.sidebar.error(f"API error: {e}")
+            st.stop()
+
+        st.write(reply)
+
+    st.session_state.msgs.append({"role": "assistant", "content": reply})
+
+
+st.set_page_config(page_title="Rahhal CREW", page_icon="🧭", layout="centered")
+
+st.markdown("## Rahhal CREW")
+st.markdown("Structured Crisis Readiness Exercise Navigator with clean export to Word.")
+st.divider()
+
+ensure_session()
+
+with st.sidebar:
+    st.header("Control Panel")
+
+    st.session_state["temperature"] = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
+
+    st.divider()
+    if st.button("Reset chat"):
+        if "msgs" in st.session_state:
+            del st.session_state["msgs"]
+        st.rerun()
+
+    st.divider()
+    st.subheader("Generate")
+    if st.button("Generate full package"):
+        call_model_and_append("FINAL PACKAGE")
+
+    st.divider()
+    st.subheader("Export")
+    if st.button("Prepare DOCX download"):
+        msgs = [m for m in st.session_state.get("msgs", []) if m.get("role") != "system"]
+        if not msgs:
+            st.warning("No content yet. Chat first, then export.")
+        else:
+            file_path = export_docx(msgs)
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    "Download Word file",
+                    f,
+                    file_name=file_path,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+
+tab_chat, tab_help = st.tabs(["Chat", "How it works"])
+
+with tab_help:
+    st.markdown(
+        """
+• Open the Chat tab  
+• Answer the first question: Discussion Based Tabletop or Functional Exercise  
+• Provide inputs one by one as Rahhal asks  
+• When ready, click Generate full package  
+• Use Export in the left panel to download a Word file with real tables  
+"""
+    )
+
+with tab_chat:
     for m in st.session_state.msgs:
         if m["role"] in ["assistant", "user"]:
             with st.chat_message(m["role"]):
@@ -227,32 +268,5 @@ with tab1:
 
     user_input = st.chat_input(placeholder="Write your answer here")
     if user_input:
-        clean = user_input.strip()
-        st.session_state.msgs.append({"role": "user", "content": clean})
-
-        with st.chat_message("user"):
-            st.write(clean)
-
-        if clean.upper() == "FINAL PACKAGE":
-            st.session_state.msgs.append({"role": "system", "content": build_final_package_override()})
-
-        client = get_client_or_sidebar_error()
-        if client is None:
-            st.stop()
-
-        with st.chat_message("assistant"):
-            try:
-                response = client.chat.completions.create(
-                    model=DEFAULT_MODEL,
-                    temperature=temperature,
-                    messages=st.session_state.msgs,
-                )
-                reply = response.choices[0].message.content
-            except Exception as e:
-                st.sidebar.error(f"API error: {e}")
-                st.stop()
-
-            st.write(reply)
-
-        st.session_state.msgs.append({"role": "assistant", "content": reply})
+        call_model_and_append(user_input)
 
