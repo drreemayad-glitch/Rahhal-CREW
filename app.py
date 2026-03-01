@@ -173,15 +173,12 @@ def ensure_session():
         ]
 
 
-def call_model_and_append(user_text: str):
+def send_to_model(user_text: str):
     clean = user_text.strip()
     if not clean:
         return
 
     st.session_state.msgs.append({"role": "user", "content": clean})
-
-    with st.chat_message("user"):
-        st.write(clean)
 
     if clean.upper() == "FINAL PACKAGE":
         st.session_state.msgs.append({"role": "system", "content": build_final_package_override()})
@@ -190,19 +187,16 @@ def call_model_and_append(user_text: str):
     if client is None:
         st.stop()
 
-    with st.chat_message("assistant"):
-        try:
-            response = client.chat.completions.create(
-                model=DEFAULT_MODEL,
-                temperature=st.session_state.get("temperature", 0.1),
-                messages=st.session_state.msgs,
-            )
-            reply = response.choices[0].message.content
-        except Exception as e:
-            st.sidebar.error(f"API error: {e}")
-            st.stop()
-
-        st.write(reply)
+    try:
+        response = client.chat.completions.create(
+            model=DEFAULT_MODEL,
+            temperature=st.session_state.get("temperature", 0.1),
+            messages=st.session_state.msgs,
+        )
+        reply = response.choices[0].message.content
+    except Exception as e:
+        st.sidebar.error(f"API error: {e}")
+        st.stop()
 
     st.session_state.msgs.append({"role": "assistant", "content": reply})
 
@@ -217,7 +211,6 @@ ensure_session()
 
 with st.sidebar:
     st.header("Control Panel")
-
     st.session_state["temperature"] = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
 
     st.divider()
@@ -225,11 +218,6 @@ with st.sidebar:
         if "msgs" in st.session_state:
             del st.session_state["msgs"]
         st.rerun()
-
-    st.divider()
-    st.subheader("Generate")
-    if st.button("Generate full package"):
-        call_model_and_append("FINAL PACKAGE")
 
     st.divider()
     st.subheader("Export")
@@ -253,9 +241,9 @@ with tab_help:
     st.markdown(
         """
 • Open the Chat tab  
-• Answer the first question: Discussion Based Tabletop or Functional Exercise  
+• Answer the first question about exercise format  
 • Provide inputs one by one as Rahhal asks  
-• When ready, click Generate full package  
+• Click Generate full package when ready  
 • Use Export in the left panel to download a Word file with real tables  
 """
     )
@@ -266,7 +254,14 @@ with tab_chat:
             with st.chat_message(m["role"]):
                 st.write(m["content"])
 
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("Generate full package"):
+            send_to_model("FINAL PACKAGE")
+            st.rerun()
+
     user_input = st.chat_input(placeholder="Write your answer here")
     if user_input:
-        call_model_and_append(user_input)
+        send_to_model(user_input)
+        st.rerun()
 
