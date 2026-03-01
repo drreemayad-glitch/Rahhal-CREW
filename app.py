@@ -28,7 +28,7 @@ def get_client_or_sidebar_error():
 
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
-        st.sidebar.error("Missing OPENAI_API_KEY. Add it in Streamlit Secrets.")
+        st.sidebar.error("Missing OPENAI_API_KEY. Add it in Streamlit Cloud Secrets.")
         return None
 
     return OpenAI(api_key=key)
@@ -171,10 +171,12 @@ def ensure_session():
                 ),
             },
         ]
+    if "pending_user" not in st.session_state:
+        st.session_state.pending_user = None
 
 
-def send_to_model(user_text: str):
-    clean = user_text.strip()
+def run_model_turn(user_text: str):
+    clean = (user_text or "").strip()
     if not clean:
         return
 
@@ -185,7 +187,7 @@ def send_to_model(user_text: str):
 
     client = get_client_or_sidebar_error()
     if client is None:
-        st.stop()
+        return
 
     try:
         response = client.chat.completions.create(
@@ -196,18 +198,18 @@ def send_to_model(user_text: str):
         reply = response.choices[0].message.content
     except Exception as e:
         st.sidebar.error(f"API error: {e}")
-        st.stop()
+        return
 
     st.session_state.msgs.append({"role": "assistant", "content": reply})
 
 
 st.set_page_config(page_title="Rahhal CREW", page_icon="🧭", layout="centered")
 
+ensure_session()
+
 st.markdown("## Rahhal CREW")
 st.markdown("Structured Crisis Readiness Exercise Navigator with clean export to Word.")
 st.divider()
-
-ensure_session()
 
 with st.sidebar:
     st.header("Control Panel")
@@ -215,8 +217,14 @@ with st.sidebar:
 
     st.divider()
     if st.button("Reset chat"):
-        if "msgs" in st.session_state:
-            del st.session_state["msgs"]
+        del st.session_state["msgs"]
+        st.session_state.pending_user = None
+        st.rerun()
+
+    st.divider()
+    st.subheader("Package")
+    if st.button("Generate full package"):
+        st.session_state.pending_user = "FINAL PACKAGE"
         st.rerun()
 
     st.divider()
@@ -254,14 +262,14 @@ with tab_chat:
             with st.chat_message(m["role"]):
                 st.write(m["content"])
 
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        if st.button("Generate full package"):
-            send_to_model("FINAL PACKAGE")
-            st.rerun()
-
     user_input = st.chat_input(placeholder="Write your answer here")
     if user_input:
-        send_to_model(user_input)
+        st.session_state.pending_user = user_input
         st.rerun()
 
+# Process pending input safely at the end of the run
+if st.session_state.pending_user:
+    pending = st.session_state.pending_user
+    st.session_state.pending_user = None
+    run_model_turn(pending)
+    st.rerun()
