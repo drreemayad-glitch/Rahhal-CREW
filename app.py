@@ -3,16 +3,13 @@ import streamlit as st
 from datetime import datetime
 from docx import Document
 
-st.set_page_config(page_title="Rahhal CREW", page_icon="🧭")
-st.write("App started OK")
-
 try:
     from openai import OpenAI
 except Exception:
     OpenAI = None
 
 
-def load_prompt():
+def load_prompt() -> str:
     try:
         with open("rahhal_prompt.txt", "r", encoding="utf-8") as f:
             return f.read()
@@ -25,28 +22,23 @@ RAHHAL_SYSTEM = load_prompt()
 
 def get_client():
     if OpenAI is None:
-        st.error("OpenAI library not installed.")
+        st.error("OpenAI library not installed. Check requirements.txt.")
         st.stop()
 
-    key = st.session_state.get("api_key", "").strip()
+    key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
-        key = os.getenv("OPENAI_API_KEY", "").strip()
-
-    if not key:
-        st.warning("Add your OpenAI API key in the sidebar.")
+        st.error("API key not configured. Add OPENAI_API_KEY in Streamlit Secrets.")
         st.stop()
 
     return OpenAI(api_key=key)
 
 
-# ---------------- DOCX TABLE PARSER ---------------- #
-
-def _is_md_table_line(line):
+def _is_md_table_line(line: str) -> bool:
     s = line.strip()
     return s.startswith("|") and s.endswith("|") and s.count("|") >= 3
 
 
-def _is_md_separator_line(line):
+def _is_md_separator_line(line: str) -> bool:
     s = line.strip().replace(" ", "")
     if not (s.startswith("|") and s.endswith("|")):
         return False
@@ -57,11 +49,11 @@ def _is_md_separator_line(line):
     return True
 
 
-def _split_md_row(line):
+def _split_md_row(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def _add_md_table_to_doc(doc, table_lines):
+def _add_md_table_to_doc(doc: Document, table_lines: list[str]):
     header = _split_md_row(table_lines[0])
     rows = [_split_md_row(x) for x in table_lines[2:]]
 
@@ -75,29 +67,24 @@ def _add_md_table_to_doc(doc, table_lines):
     for row in rows:
         r = table.add_row().cells
         for j in range(ncols):
-            if j < len(row):
-                r[j].text = row[j]
+            r[j].text = row[j] if j < len(row) else ""
 
 
-def _add_markdown_to_doc(doc, text):
+def _add_markdown_to_doc(doc: Document, text: str):
     lines = text.splitlines()
     i = 0
     buffer = []
 
     def flush():
         nonlocal buffer
-        if buffer:
-            doc.add_paragraph("\n".join(buffer))
-            buffer = []
+        joined = "\n".join(buffer).strip()
+        if joined:
+            doc.add_paragraph(joined)
+        buffer = []
 
     while i < len(lines):
         line = lines[i]
-
-        if (
-            _is_md_table_line(line)
-            and i + 1 < len(lines)
-            and _is_md_separator_line(lines[i + 1])
-        ):
+        if _is_md_table_line(line) and i + 1 < len(lines) and _is_md_separator_line(lines[i + 1]):
             flush()
             block = [line, lines[i + 1]]
             i += 2
@@ -116,11 +103,11 @@ def _add_markdown_to_doc(doc, text):
 def export_docx(messages):
     doc = Document()
     doc.add_heading("Rahhal CREW Output", level=1)
-    doc.add_paragraph(
-        f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
-    )
+    doc.add_paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
 
     for m in messages:
+        if m.get("role") == "system":
+            continue
         doc.add_heading(m["role"].capitalize(), level=2)
         _add_markdown_to_doc(doc, m["content"])
 
@@ -129,77 +116,140 @@ def export_docx(messages):
     return path
 
 
-# ---------------- UI ---------------- #
+def build_final_package_override() -> str:
+    return """
+For this response only:
 
-st.title("Rahhal CREW")
-st.caption("Crisis Readiness Exercise Workflow Engine")
+Output ONLY markdown tables. No prose outside tables.
+
+Order:
+1 System Mapping Summary
+2 Objective Matrix
+3 Scenario Brief as Field | Content
+4 Inject Architecture
+5 Facilitator Evaluation Matrix
+6 Coverage Validation Summary
+
+Use exact headers:
+
+System Mapping Summary:
+Exercise Level | Format | Hazard | Systems | Stakeholders | Escalation Authority | Duration | Constraints
+
+Objective Matrix:
+Objective | Structural Dimension | Measurable Indicator | Linked Capability
+
+Scenario Brief:
+Field | Content
+
+Inject Architecture:
+Wave | Time | Inject Format | What Participants Receive | Linked Objective | Decision Focus | Discussion Questions | What to Observe
+
+Facilitator Evaluation Matrix:
+Objective | Structural Dimension | Expected Actions | Performance Indicators | Evidence Source | Observer Notes
+
+Coverage Validation Summary:
+Item | Status | Notes
+
+If unknown write TBC.
+Max 3 discussion questions separated by semicolons.
+Do not use the pipe character inside cell content.
+"""
+
+
+st.set_page_config(page_title="Rahhal CREW", page_icon="🧭", layout="centered")
+
+st.markdown("## Rahhal CREW")
+st.markdown("Structured Crisis Readiness Exercise Navigator with clean export to Word.")
+st.caption("Tip: type FINAL PACKAGE when you want the full package in tables.")
+st.divider()
 
 with st.sidebar:
-    st.header("Settings")
-    st.text_input("OpenAI API key", type="password", key="api_key")
-    model = st.selectbox("Model", ["gpt-4.1-mini", "gpt-4.1"])
-    temperature = st.slider("Creativity", 0.0, 1.0, 0.1)
+    st.header("Control Panel")
+    model = st.selectbox("Model", ["gpt-4.1-mini", "gpt-4.1"], index=0)
+    temperature = st.slider("Creativity", 0.0, 1.0, 0.1, 0.05)
+    st.divider()
 
-    if st.button("Reset"):
+    if st.button("Reset chat"):
         if "msgs" in st.session_state:
             del st.session_state["msgs"]
         st.rerun()
 
+    st.divider()
+    st.subheader("Export")
+    if st.button("Prepare DOCX download"):
+        msgs = st.session_state.get("msgs", [])
+        msgs = [m for m in msgs if m.get("role") != "system"]
+        if not msgs:
+            st.warning("No content yet. Chat first, then export.")
+        else:
+            file_path = export_docx(msgs)
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    "Download Word file",
+                    f,
+                    file_name=file_path,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
 
-if "msgs" not in st.session_state:
-    st.session_state.msgs = [
-        {"role": "system", "content": RAHHAL_SYSTEM},
-        {
-            "role": "assistant",
-            "content": "Are you designing a Discussion-Based Tabletop or a Functional Exercise?",
-        },
-    ]
+tab1, tab2 = st.tabs(["Chat", "How it works"])
 
+with tab2:
+    st.markdown(
+        """
+How to use:
+1 Select your exercise format when asked
+2 Provide inputs one by one
+3 When ready, type FINAL PACKAGE
+4 Use Export in the left panel to download Word tables
+"""
+    )
 
-for m in st.session_state.msgs:
-    if m["role"] in ["assistant", "user"]:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+with tab1:
+    if "msgs" not in st.session_state:
+        st.session_state.msgs = [
+            {"role": "system", "content": RAHHAL_SYSTEM},
+            {
+                "role": "assistant",
+                "content": (
+                    "Welcome. I am Rahhal, your Crisis Readiness Exercise Navigator.\n\n"
+                    "I will guide you step by step to design a structured preparedness exercise "
+                    "with governance clarity, operational alignment, and measurable evaluation outputs.\n\n"
+                    "To begin, are you designing a Discussion-Based Tabletop or a Functional Exercise?"
+                ),
+            },
+        ]
 
+    for m in st.session_state.msgs:
+        if m["role"] in ["assistant", "user"]:
+            with st.chat_message(m["role"]):
+                st.write(m["content"])
 
-user_input = st.chat_input("Message Rahhal")
+    user_input = st.chat_input("Type your message")
+    if user_input:
+        clean = user_input.strip()
+        st.session_state.msgs.append({"role": "user", "content": clean})
 
-if user_input:
-    st.session_state.msgs.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.write(clean)
 
-    with st.chat_message("user"):
-        st.write(user_input)
+        if clean.upper() == "FINAL PACKAGE":
+            st.session_state.msgs.append({"role": "system", "content": build_final_package_override()})
 
-    client = get_client()
+        client = get_client()
 
-    with st.chat_message("assistant"):
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                temperature=temperature,
-                messages=st.session_state.msgs,
-            )
-            reply = response.choices[0].message.content
-        except Exception as e:
-            st.error(f"API error: {e}")
-            st.stop()
+        with st.chat_message("assistant"):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    temperature=temperature,
+                    messages=st.session_state.msgs,
+                )
+                reply = response.choices[0].message.content
+            except Exception as e:
+                st.error(f"API error: {e}")
+                st.stop()
 
-        st.write(reply)
+            st.write(reply)
 
-    st.session_state.msgs.append({"role": "assistant", "content": reply})
-
-
-st.divider()
-
-if st.button("Export DOCX"):
-    msgs = [m for m in st.session_state.msgs if m["role"] != "system"]
-    file_path = export_docx(msgs)
-
-    with open(file_path, "rb") as f:
-        st.download_button(
-            "Download DOCX",
-            f,
-            file_name=file_path,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+        st.session_state.msgs.append({"role": "assistant", "content": reply})
 
