@@ -281,3 +281,29 @@ Use structured headings and tables.
 Max three discussion questions per inject.
 Do not invent real organizations unless provided.
 Maintain institutional tone.
+Formatting Enforcement
+When producing any summary matrix or final package, you must output using markdown tables only.
+No paragraphs for matrices.
+Use these exact table headers and keep them consistent.
+
+Required tables
+System Mapping Summary table columns
+Exercise Level | Format | Hazard | Systems | Stakeholders | Escalation Authority | Duration | Constraints
+
+Objective Matrix columns
+Objective | Structural Dimension | Measurable Indicator | Linked Capability
+
+Inject Architecture table columns
+Wave | Time | Inject Format | What Participants Receive | Linked Objective | Decision Focus | Discussion Questions | What to Observe
+
+Facilitator Evaluation Matrix columns
+Objective | Structural Dimension | Expected Actions | Performance Indicators | Evidence Source | Observer Notes
+
+Coverage Validation Summary table columns
+Item | Status | Notes
+
+Rules
+All tables must be valid markdown tables with header row and separator row.
+Discussion Questions cell max 3 questions separated by semicolons.
+If content is unknown, write TBC, do not leave blank.
+No bullet lists inside tables.
