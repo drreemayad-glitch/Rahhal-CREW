@@ -307,3 +307,9 @@ All tables must be valid markdown tables with header row and separator row.
 Discussion Questions cell max 3 questions separated by semicolons.
 If content is unknown, write TBC, do not leave blank.
 No bullet lists inside tables.
+Output Stability Rule
+If a required table header is missing, regenerate the table correctly before finishing.
+Never output partial matrices.
+Never mix prose outside defined table structures in FINAL PACKAGE mode.
+
+
